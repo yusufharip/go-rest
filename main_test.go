@@ -105,3 +105,65 @@ func Test_DeleteProduct(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, response.Code, "Invalid response code")
 }
+
+func Test_ShowProduct(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Log(err)
+	}
+	rows := sqlmock.NewRows([]string{"id","name","price"}).
+		AddRow(2, "Tempe", 1500)
+	mock.ExpectQuery("SELECT id, name, price FROM products WHERE id = 2").
+		WillReturnRows(rows)
+
+	mysqlDB = db
+	request, _ := http.NewRequest("GET", "/api/products/2", nil)
+	response := httptest.NewRecorder()
+
+	Server().ServeHTTP(response, request)
+	expectedResponse := `{"data":{"type":"products","id":"2","attributes":{"name":"Tempe","price":1500}}}`
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		t.Log(err)
+	}
+	assert.Equal(t, 200, response.Code, "Invalid response code")
+	assert.Equal(t, expectedResponse, string(bytes.TrimSpace(responseBody)))
+	t.Log(response.Body.String())
+}
+
+func Test_UpdateProduct(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+	if err != nil {
+		t.Log(err)
+	}
+
+	mock.ExpectPrepare("UPDATE products SET name = ?, price = ? WHERE id = ?")
+	mock.ExpectExec("UPDATE products SET name = ?, price = ? WHERE id = ?").
+		WithArgs(2, "tempe", 1500).
+		WillReturnResult(sqlmock.NewResult(2, 1))
+
+	mysqlDB = db
+	data := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type": "products",
+			"attributes": map[string]interface{}{
+				"name":  "tempe",
+				"price": 1500,
+			},
+		},
+	}
+	requestBody, _ := json.Marshal(data)
+	request, _ := http.NewRequest("PUT", "/api/products/2", bytes.NewBuffer(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	Server().ServeHTTP(response, request)
+	expectedResponse := `{"data":{"type":"products","id":"2","attributes":{"name":"tempe","price":1500}}}`
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		t.Log(err)
+	}
+	assert.Equal(t, http.StatusOK, response.Code, "Invalid response code")
+	assert.Equal(t, expectedResponse, string(bytes.TrimSpace(responseBody)))
+	t.Log(response.Body.String())
+}

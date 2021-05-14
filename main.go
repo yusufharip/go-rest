@@ -26,6 +26,8 @@ func Server() *mux.Router {
 	router.HandleFunc("/api/products", BrowseProduct).Methods("GET")
 	router.HandleFunc("/api/products", CreateProduct).Methods("POST")
 	router.HandleFunc("/api/products/{id}", DeleteProduct).Methods("DELETE")
+	router.HandleFunc("/api/products/{id}", ShowProduct).Methods("GET")
+	router.HandleFunc("/api/products/{id}", UpdateProduct).Methods("PUT")
 	return  router
 }
 
@@ -114,4 +116,51 @@ func DeleteProduct(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func ShowProduct(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Type", "application/json")
+	productID := mux.Vars(request)["id"]
+
+	rows, err := mysqlDB.Query("SELECT id, name, price FROM products WHERE id = " + productID)
+	if err != nil {
+		renderJson(writer, map[string]interface{}{
+			"message": "Not Found",
+		})
+	}
+
+	var product Product
+	for rows.Next() {
+		if err := rows.Scan(&product.ID, &product.Name, &product.Price); err != nil {
+			log.Print(err)
+		}
+	}
+
+	renderJson(writer, &product)
+}
+
+func UpdateProduct(writer http.ResponseWriter, request *http.Request) {
+	productID := mux.Vars(request)["id"]
+	var product Product
+	err := jsonapi.UnmarshalPayload(request.Body, &product)
+	if err != nil {
+		writer.Header().Set("Content-Type", jsonapi.MediaType)
+		writer.WriteHeader(http.StatusUnprocessableEntity)
+		jsonapi.MarshalErrors(writer, []*jsonapi.ErrorObject {{
+			Title: "ValidationError",
+			Detail: "Given request is invalid",
+			Status: strconv.Itoa(http.StatusUnprocessableEntity),
+		}})
+		return
+	}
+
+	query, err := mysqlDB.Prepare("UPDATE products SET name = ?, price = ? WHERE id = ?")
+	query.Exec(product.Name, product.Price, productID)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	product.ID, _ = strconv.ParseInt(productID, 10, 64)
+	renderJson(writer, &product)
 }
